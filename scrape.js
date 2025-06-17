@@ -3,14 +3,13 @@ const fs = require('fs');
 const iconv = require('iconv-lite');
 const { stringify } = require('csv-stringify');
 
-// Динамический импорт node-fetch
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
-// Базовый URL словаря
+
 const baseUrl = 'https://www.astrokot.kiev.ua/slovar/';
 const dictionaryUrl = `${baseUrl}spisok.htm`;
 
-// Функция для получения HTML страницы с учетом кодировки
+
 async function fetchPage(url) {
   try {
     const response = await fetch(url, {
@@ -23,7 +22,6 @@ async function fetchPage(url) {
     }
     const buffer = await response.arrayBuffer();
     
-    // Проверяем заголовок Content-Type для определения кодировки
     let encoding = 'utf-8';
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('charset=windows-1251')) {
@@ -34,7 +32,6 @@ async function fetchPage(url) {
     
     const html = iconv.decode(Buffer.from(buffer), encoding);
     
-    // Дополнительная проверка: если в HTML есть meta charset, используем его
     const $ = cheerio.load(html);
     const metaCharset = $('meta[http-equiv="Content-Type"], meta[charset]').attr('content') || $('meta[charset]').attr('charset');
     if (metaCharset && metaCharset.toLowerCase().includes('windows-1251') && encoding !== 'windows-1251') {
@@ -49,7 +46,6 @@ async function fetchPage(url) {
   }
 }
 
-// Функция для получения всех ссылок словаря
 async function getDictionaryLinks() {
   let html;
   try {
@@ -62,7 +58,6 @@ async function getDictionaryLinks() {
   const $ = cheerio.load(html);
   const links = [];
   
-  // Поиск ссылок
   $('a[href$=".htm"]').each((i, elem) => {
     const href = $(elem).attr('href');
     const title = $(elem).text().trim();
@@ -74,30 +69,27 @@ async function getDictionaryLinks() {
     }
   });
   
-  console.log('Найденные ссылки:', links); // Отладочный вывод всех ссылок
-  return links; // Возвращаем все ссылки
+  console.log('Найденные ссылки:', links); 
+  return links; 
 }
 
-// Функция для парсинга данных с одной страницы
 async function parsePage(linkObj) {
   const { url, linkText } = linkObj;
   try {
     const html = await fetchPage(url);
     const $ = cheerio.load(html);
 
-    // Получаем заголовок (h1 или первый td)
     let title = $('h1').text().trim();
     if (!title) {
       title = $('td').first().text().trim();
     }
 
-    // Получаем описание (всё между заголовком и <h4>Литература</h4>, исключая саму <h4>)
     let description = [];
     let capture = false;
     $('*').each((i, elem) => {
       if ($(elem).is('h4') && $(elem).text().trim() === 'Литература') {
         capture = false;
-        return false; // Прерываем цикл до добавления текста
+        return false; 
       }
       if (capture) {
         const text = $(elem).is('p, td') ? $(elem).text().trim() : '';
@@ -109,11 +101,8 @@ async function parsePage(linkObj) {
         capture = true;
       }
     });
-
-    // Объединяем описание в одну строку, заменяя все переносы строк на пробелы
     const finalDescription = description.join(' ').replace(/\n/g, ' ').trim();
 
-    // Экранируем кавычки и запятые для CSV
     return {
       url,
       linkText: linkText.replace(/"/g, '""'),
@@ -122,11 +111,10 @@ async function parsePage(linkObj) {
     };
   } catch (error) {
     console.warn(`Пропущена страница ${url} из-за ошибки: ${error.message}`);
-    return null; // Возвращаем null для пропущенных страниц
+    return null; 
   }
 }
 
-// Функция для записи данных в CSV с добавлением порциями по 10 страниц
 async function writeToCSV(data, isFirstWrite = false) {
   const columns = {
     url: 'URL',
@@ -139,13 +127,12 @@ async function writeToCSV(data, isFirstWrite = false) {
     stringify(
       data,
       {
-        header: isFirstWrite, // Добавляем заголовки только при первой записи
+        header: isFirstWrite,
         columns,
-        quoted: true, // Оборачиваем все поля в кавычки
+        quoted: true, 
       },
       (err, output) => {
         if (err) return reject(err);
-        // Если файл существует, дописываем данные, иначе создаем новый файл с заголовками
         const fileExists = fs.existsSync('dictionary.csv');
         fs.appendFileSync('dictionary.csv', output, 'utf8');
         resolve();
@@ -154,7 +141,6 @@ async function writeToCSV(data, isFirstWrite = false) {
   });
 }
 
-// Основная функция
 async function main() {
   try {
     console.log('Получение ссылок словаря...');
@@ -174,21 +160,18 @@ async function main() {
         results.push(pageData);
       }
 
-      // Записываем данные каждые 10 страниц
       if ((i + 1) % 10 === 0 || i === links.length - 1) {
         console.log(`Запись данных для страниц ${i - 9 > 0 ? i - 9 : 0}-${i + 1} в dictionary.csv...`);
-        await writeToCSV(results, i === 0); // Заголовки только для первой записи
-        results = []; // Очищаем массив после записи
+        await writeToCSV(results, i === 0); 
+        results = []; 
       }
 
-      // Задержка 1 секунда для избежания блокировки
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     if (results.length > 0) {
-      // Записываем оставшиеся данные, если их меньше 10
       console.log(`Запись оставшихся ${results.length} страниц в dictionary.csv...`);
-      await writeToCSV(results, false); // Без заголовков
+      await writeToCSV(results, false); 
     }
 
     console.log('Все данные успешно записаны в dictionary.csv!');
